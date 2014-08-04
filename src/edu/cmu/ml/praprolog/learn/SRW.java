@@ -297,6 +297,25 @@ public class SRW<E extends RWExample> {
 		}
 	}
 	
+	public Map<String,Double> gradientForExample(ParamVector paramVec, E example) {
+		addDefaultWeights(example.getGraph(),paramVec);
+		prepareGradient(paramVec,example);
+		Map<String,Double> grad = gradient(paramVec,example);
+		if (log.isDebugEnabled()) {
+			log.debug("Gradient: "+Dictionary.buildString(grad, new StringBuilder(), "\n\t").toString());
+		}
+		return grad;
+	}
+	
+	public void applyGradient(Map<String,Double> grad, ParamVector paramVec) {
+		double rate = learningRate();
+		if (log.isDebugEnabled()) log.debug("rate "+rate);
+		for (Map.Entry<String, Double> f : grad.entrySet()) {
+			Dictionary.increment(paramVec, f.getKey(), - rate * f.getValue());
+			log.debug(f.getKey()+"->"+paramVec.get(f.getKey()));
+		}
+	}
+	
 	protected double learningRate() {
 		return Math.pow(this.epoch,-2) * this.eta;
 	}

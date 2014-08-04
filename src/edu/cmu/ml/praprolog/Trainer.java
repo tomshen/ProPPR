@@ -51,7 +51,7 @@ public class Trainer<T> {
 		Map<String,Double> sumGradient = new TreeMap<String,Double>();
 		if (paramVec==null) {
 		    paramVec = new SimpleParamVector();
-		    for (String f : this.learner.untrainedFeatures()) paramVec.put(f, 1.0);
+		    for (String f : this.learner.untrainedFeatures()) paramVec.put(f, this.learner.getWeightingScheme().defaultWeight());
 		}
 		int k=0;
 		for (PosNegRWExample<T> x : examples) {
@@ -82,7 +82,7 @@ public class Trainer<T> {
 		this.epoch = 0;
 		ParamVector paramVec = this.learner.setupParams(initialParamVec);
 		if (paramVec.size() == 0) {
-			for (String f : this.learner.untrainedFeatures()) paramVec.put(f, 1.0);
+			for (String f : this.learner.untrainedFeatures()) paramVec.put(f, this.learner.getWeightingScheme().defaultWeight());
 		}
 		setUpEpochs(paramVec);
 		for (int i=0; i<numEpochs; i++) {
