@@ -64,20 +64,25 @@ public class MultithreadedRRTrainer<T> extends Trainer<T> {
 		
 	}
 	
+	protected void addThreads() {
+		int k=0;
+		for (TrainerExample ex : currentTrainingRun.queue) {
+			currentTrainingRun.futures.add(currentTrainingRun.executor.submit(new TrainerThread(ex,k)));
+			k++;
+		}
+	}
+	
 	@Override
 	protected void cleanUpExamples(int epoch, ParamVector paramVec) {
 //		int n=0;
 		int nX = currentTrainingRun.queue.size();
 		currentTrainingRun.executor = Executors.newFixedThreadPool(nthreads);
 		currentTrainingRun.futures = new ArrayDeque<Future>();
-		int k=0;
-		for (TrainerExample ex : currentTrainingRun.queue) {
-			currentTrainingRun.futures.add(currentTrainingRun.executor.submit(new TrainerThread(ex,k)));
-			k++;
-		}
+		
+		this.addThreads();
 		
 		currentTrainingRun.executor.shutdown();
-		k=0;
+		int k=0;
 		for(Future f; (f=currentTrainingRun.futures.poll()) != null; k++) {
 			try {
 				log.debug("Joining on example "+k);
