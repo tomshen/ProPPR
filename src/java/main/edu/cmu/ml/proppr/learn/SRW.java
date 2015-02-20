@@ -500,7 +500,7 @@ public class SRW<E extends RWExample> {
 					if (it.key().equals(FEATURE_ALPHA_BOOSTER)) {
 						phiAB = it.value(); continue;
 					}
-					newAlphaBooster -= it.value() * Dictionary.safeGet(paramVec, it.key(), c.weightingScheme.defaultWeight());
+					newAlphaBooster -= it.value() * (Double)Dictionary.safeGet(paramVec, it.key(), c.weightingScheme.defaultWeight());
 				}
 				newAlphaBooster/= phiAB;
 				sb.append(" using alpha boost: ").append(newAlphaBooster).append("@").append(FEATURE_ALPHA_BOOSTER);
