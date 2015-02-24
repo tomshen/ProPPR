@@ -1,35 +1,27 @@
 package edu.cmu.ml.proppr;
 
-import edu.cmu.ml.proppr.examples.PosNegRWExample;
-import edu.cmu.ml.proppr.graph.LearningGraph;
-import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
-import edu.cmu.ml.proppr.graph.SimpleLearningGraph;
-import edu.cmu.ml.proppr.learn.SRW;
-import edu.cmu.ml.proppr.learn.tools.GroundedExampleStreamer;
-import edu.cmu.ml.proppr.util.ParamVector;
-import edu.cmu.ml.proppr.util.ParamsFile;
-import edu.cmu.ml.proppr.util.ParsedFile;
-import edu.cmu.ml.proppr.util.SimpleParamVector;
-import edu.cmu.ml.proppr.util.multithreading.Multithreading;
-import gnu.trove.list.TIntList;
-import gnu.trove.list.linked.TIntLinkedList;
-import gnu.trove.map.TIntDoubleMap;
-import gnu.trove.map.hash.TIntDoubleHashMap;
-import gnu.trove.procedure.TIntDoubleProcedure;
-import org.apache.log4j.Logger;
-
 import java.io.BufferedWriter;
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.Properties;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+
+import org.apache.log4j.Logger;
+import gnu.trove.map.TIntDoubleMap;
+import gnu.trove.map.hash.TIntDoubleHashMap;
+import gnu.trove.procedure.TIntDoubleProcedure;
+
+import edu.cmu.ml.proppr.graph.LearningGraph;
+import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
+import edu.cmu.ml.proppr.graph.SimpleLearningGraph;
+import edu.cmu.ml.proppr.learn.SRW;
+import edu.cmu.ml.proppr.util.ParamVector;
+import edu.cmu.ml.proppr.util.ParsedFile;
+import edu.cmu.ml.proppr.util.SRWOptions;
+import edu.cmu.ml.proppr.util.SimpleParamVector;
 
 /**
  * Created by tom on 2/19/15.
@@ -38,6 +30,7 @@ public class Propagator {
     private static final Logger log = Logger.getLogger(Propagator.class);
     public static final int DEFAULT_CAPACITY = 16;
     public static final float DEFAULT_LOAD = (float) 0.75;
+    public static final int iterations = 11;
 
     private static ParamVector createParamVector(int nthreads) {
         return new SimpleParamVector<String>(new ConcurrentHashMap<String,Double>(DEFAULT_CAPACITY,
@@ -68,7 +61,7 @@ public class Propagator {
             e.printStackTrace();
         }
         int nthreads = Integer.parseInt(args[2]);
-        SRW srw = new edu.cmu.ml.proppr.learn.L2PosNegLossTrainedSRW();
+        SRW srw = new SRW<>(new SRWOptions(iterations));
 
         long start = System.currentTimeMillis();
         LearningGraphBuilder graphBuilder = new SimpleLearningGraph.SLGBuilder();
