@@ -5,10 +5,17 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
+import gnu.trove.map.TIntObjectMap;
+import gnu.trove.map.hash.TIntObjectHashMap;
+import gnu.trove.procedure.TIntObjectProcedure;
+import gnu.trove.set.TIntSet;
+import gnu.trove.set.hash.TIntHashSet;
 import org.apache.log4j.Logger;
 import gnu.trove.map.TIntDoubleMap;
 import gnu.trove.map.hash.TIntDoubleHashMap;
@@ -52,26 +59,24 @@ public class Propagator {
     }
 
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws IOException {
         ParsedFile graphFile = new ParsedFile(args[0]);
-        BufferedWriter resultsWriter = null;
-        try {
-            resultsWriter = Files.newBufferedWriter(FileSystems.getDefault().getPath(args[1]), Charset.defaultCharset());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        final BufferedWriter resultsWriter = Files.newBufferedWriter(FileSystems.getDefault().getPath(args[1]),
+                Charset.defaultCharset());
         int nthreads = Integer.parseInt(args[2]);
         SRW srw = new SRW<>(new SRWOptions(iterations));
 
         long start = System.currentTimeMillis();
         LearningGraphBuilder graphBuilder = new SimpleLearningGraph.SLGBuilder();
 
+        final TIntObjectMap<Map<String,Double>> nodeLabels = new TIntObjectHashMap<>();
+
         while (graphFile.hasNext()) {
             // Parsing based on edu.cmu.ml.proppr.learn.tools.GroundedExampleStreamer
             String line = graphFile.next();
             log.debug("Importing example from line " + graphFile.getLineNumber());
             String[] parts = line.trim().split("\t", 5);
-            String label = parts[0];
+            final String label = parts[0];
 
             int startNode = Integer.parseInt(parts[2].split(",")[0]);
 
@@ -85,19 +90,48 @@ public class Propagator {
                 srw.setupParams(params);
 
                 TIntDoubleMap resultVec = srw.rwrUsingFeatures(g, startVec, params);
-                if (resultsWriter != null) {
-                    resultsWriter.write(label + "\n" + getTopResults(resultVec, 1e-6).toString() + "\n");
-                }
+                resultVec.forEachEntry(new TIntDoubleProcedure() {
+                    @Override
+                    public boolean execute(int node, double weight) {
+                        nodeLabels.putIfAbsent(node, new HashMap<String, Double>());
+                        nodeLabels.get(node).put(label, weight);
+                        return true;
+                    }
+                });
             } catch (LearningGraph.GraphFormatException e) {
                 log.error("Failed to deserialize learning graph.");
-                e.printStackTrace();
-                System.exit(-1);
-            } catch (IOException e) {
-                log.error("Failed to write results.");
                 e.printStackTrace();
                 System.exit(-1);
             }
         }
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
+
+        nodeLabels.forEachEntry(new TIntObjectProcedure<Map<String, Double>>() {
+            private String argmax(Map<String, Double> stringDoubleMap) {
+                double maxWeight = Double.MIN_VALUE;
+                String maxWeightLabel = null;
+                for (Map.Entry<String, Double> entry : stringDoubleMap.entrySet()) {
+                    String label = entry.getKey();
+                    double weight = entry.getValue();
+                    if (weight > maxWeight) {
+                        maxWeight = weight;
+                        maxWeightLabel = label;
+                    }
+                }
+                return maxWeightLabel;
+            }
+            @Override
+            public boolean execute(int node, Map<String, Double> labelWeights) {
+                String label = argmax(labelWeights);
+                if (resultsWriter != null) {
+                    try {
+                        resultsWriter.write(Integer.toString(node) + "\t" + label + "\n");
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+                return true;
+            }
+        });
     }
 }
