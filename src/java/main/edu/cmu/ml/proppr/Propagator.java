@@ -5,10 +5,7 @@ import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.SortedSet;
-import java.util.TreeSet;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import gnu.trove.map.TIntObjectMap;
@@ -43,21 +40,6 @@ public class Propagator {
         return new SimpleParamVector<String>(new ConcurrentHashMap<String,Double>(DEFAULT_CAPACITY,
                 DEFAULT_LOAD, nthreads));
     }
-
-    private static SortedSet<Integer> getTopResults(TIntDoubleMap results, final double alpha) {
-        final SortedSet<Integer> topResults = new TreeSet<>();
-        results.forEachEntry(new TIntDoubleProcedure() {
-            @Override
-            public boolean execute(int i, double v) {
-                if (v >= alpha) {
-                    topResults.add(i);
-                }
-                return true;
-            }
-        });
-        return topResults;
-    }
-
 
     public static void main(String[] args) throws IOException {
         ParsedFile graphFile = new ParsedFile(args[0]);
@@ -107,27 +89,39 @@ public class Propagator {
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
         nodeLabels.forEachEntry(new TIntObjectProcedure<Map<String, Double>>() {
-            private String argmax(Map<String, Double> stringDoubleMap) {
-                double maxWeight = Double.MIN_VALUE;
-                String maxWeightLabel = null;
-                for (Map.Entry<String, Double> entry : stringDoubleMap.entrySet()) {
-                    String label = entry.getKey();
-                    double weight = entry.getValue();
-                    if (weight > maxWeight) {
-                        maxWeight = weight;
-                        maxWeightLabel = label;
+            private <K, V extends Comparable<? super V>> Map<K, V>
+            sortByValue( Map<K, V> map )
+            {
+                List<Map.Entry<K, V>> list =
+                        new LinkedList<>( map.entrySet() );
+                Collections.sort( list, new Comparator<Map.Entry<K, V>>()
+                {
+                    @Override
+                    public int compare( Map.Entry<K, V> o1, Map.Entry<K, V> o2 )
+                    {
+                        return (o1.getValue()).compareTo( o2.getValue() );
                     }
+                } );
+
+                Map<K, V> result = new LinkedHashMap<>();
+                for (Map.Entry<K, V> entry : list)
+                {
+                    result.put( entry.getKey(), entry.getValue() );
                 }
-                return maxWeightLabel;
+                return result;
             }
             @Override
             public boolean execute(int node, Map<String, Double> labelWeights) {
-                String label = argmax(labelWeights);
+                Map<String, Double> sortedLabels = sortByValue(labelWeights);
                 if (resultsWriter != null) {
                     try {
-                        resultsWriter.write(Integer.toString(node) + "\t" + label + "\n");
+                        StringBuilder sb = new StringBuilder();
+                        for (String label : sortedLabels.keySet()) {
+                            sb.append(label + "\t");
+                        }
+                        resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
                     } catch (IOException e) {
-                        e.printStackTrace();
+                        log.trace("Failed to write node ", e);
                     }
                 }
                 return true;
