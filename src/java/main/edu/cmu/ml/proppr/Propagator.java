@@ -89,22 +89,11 @@ public class Propagator {
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
         nodeLabels.forEachEntry(new TIntObjectProcedure<Map<String, Double>>() {
-            private <K, V extends Comparable<? super V>> Map<K, V>
+            private <K, V extends Comparable<? super V>> TreeMap<K, V>
             sortByValue( Map<K, V> map )
             {
-                List<Map.Entry<K, V>> list =
-                        new LinkedList<>( map.entrySet() );
-                Collections.sort( list, new Comparator<Map.Entry<K, V>>()
-                {
-                    @Override
-                    public int compare( Map.Entry<K, V> o1, Map.Entry<K, V> o2 )
-                    {
-                        return (o1.getValue()).compareTo( o2.getValue() );
-                    }
-                } );
-
-                Map<K, V> result = new LinkedHashMap<>();
-                for (Map.Entry<K, V> entry : list)
+                TreeMap<K, V> result = new TreeMap<>();
+                for (Map.Entry<K, V> entry : map.entrySet())
                 {
                     result.put( entry.getKey(), entry.getValue() );
                 }
@@ -112,11 +101,11 @@ public class Propagator {
             }
             @Override
             public boolean execute(int node, Map<String, Double> labelWeights) {
-                Map<String, Double> sortedLabels = sortByValue(labelWeights);
+                TreeMap<String, Double> sortedLabels = sortByValue(labelWeights);
                 if (resultsWriter != null) {
                     try {
                         StringBuilder sb = new StringBuilder();
-                        for (String label : sortedLabels.keySet()) {
+                        for (String label : sortedLabels.descendingKeySet()) {
                             sb.append(label + "\t");
                         }
                         resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
