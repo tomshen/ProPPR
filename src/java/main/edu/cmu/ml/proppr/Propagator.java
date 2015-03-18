@@ -89,23 +89,34 @@ public class Propagator {
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
         nodeLabels.forEachEntry(new TIntObjectProcedure<Map<String, Double>>() {
-            private <K, V extends Comparable<? super V>> TreeMap<K, V>
-            sortByValue( Map<K, V> map )
+            private <K, V extends Comparable<? super V>> List<K>
+            sortedKeysByValue( Map<K, V> map )
             {
-                TreeMap<K, V> result = new TreeMap<>();
-                for (Map.Entry<K, V> entry : map.entrySet())
+                List<Map.Entry<K, V>> list =
+                        new LinkedList<>( map.entrySet() );
+                Collections.sort( list, new Comparator<Map.Entry<K, V>>()
                 {
-                    result.put( entry.getKey(), entry.getValue() );
+                    @Override
+                    public int compare( Map.Entry<K, V> o1, Map.Entry<K, V> o2 )
+                    {
+                        return (o1.getValue()).compareTo( o2.getValue() );
+                    }
+                } );
+                List<K> keys = new LinkedList<>();
+                for (Map.Entry<K, V> entry : list)
+                {
+                    keys.add(entry.getKey());
                 }
-                return result;
+                return keys;
             }
             @Override
             public boolean execute(int node, Map<String, Double> labelWeights) {
-                TreeMap<String, Double> sortedLabels = sortByValue(labelWeights);
+                List<String> sortedLabels = sortedKeysByValue(labelWeights);
+                Collections.reverse(sortedLabels);
                 if (resultsWriter != null) {
                     try {
                         StringBuilder sb = new StringBuilder();
-                        for (String label : sortedLabels.descendingKeySet()) {
+                        for (String label : sortedLabels) {
                             sb.append(label + "\t");
                         }
                         resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
