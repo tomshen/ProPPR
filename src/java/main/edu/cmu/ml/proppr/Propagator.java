@@ -104,9 +104,9 @@ public class Propagator {
                 });
             }
         } catch (InterruptedException e) {
-            e.printStackTrace();
+            log.trace("SRW execution interrupted", e);
         } catch (ExecutionException e) {
-            e.printStackTrace();
+            log.trace("SRW execution failed", e);
         }
         return nodeLabels;
     }
@@ -127,27 +127,25 @@ public class Propagator {
 
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
+        start = System.currentTimeMillis();
         nodeLabels.forEachEntry(new TIntObjectProcedure<Map<String, Double>>() {
             private <K, V extends Comparable<? super V>> List<K>
-            sortedKeysByValue( Map<K, V> map )
-            {
+            sortedKeysByValue(Map<K, V> map) {
                 List<Map.Entry<K, V>> list =
-                        new LinkedList<>( map.entrySet() );
-                Collections.sort( list, new Comparator<Map.Entry<K, V>>()
-                {
+                        new LinkedList<>(map.entrySet());
+                Collections.sort(list, new Comparator<Map.Entry<K, V>>() {
                     @Override
-                    public int compare( Map.Entry<K, V> o1, Map.Entry<K, V> o2 )
-                    {
-                        return (o1.getValue()).compareTo( o2.getValue() );
+                    public int compare(Map.Entry<K, V> o1, Map.Entry<K, V> o2) {
+                        return (o1.getValue()).compareTo(o2.getValue());
                     }
-                } );
+                });
                 List<K> keys = new LinkedList<>();
-                for (Map.Entry<K, V> entry : list)
-                {
+                for (Map.Entry<K, V> entry : list) {
                     keys.add(entry.getKey());
                 }
                 return keys;
             }
+
             @Override
             public boolean execute(int node, Map<String, Double> labelWeights) {
                 List<String> sortedLabels = sortedKeysByValue(labelWeights);
@@ -166,5 +164,6 @@ public class Propagator {
                 return true;
             }
         });
+        log.info("Finished writing results in " + (System.currentTimeMillis() - start) + " ms");
     }
 }
