@@ -1,5 +1,22 @@
 package edu.cmu.ml.proppr;
 
+import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
+import edu.cmu.ml.proppr.graph.SimpleLearningGraph;
+import edu.cmu.ml.proppr.learn.SRW;
+import edu.cmu.ml.proppr.learn.tools.JuntoGraph;
+import edu.cmu.ml.proppr.learn.tools.JuntoGraphStreamer;
+import edu.cmu.ml.proppr.util.ParamVector;
+import edu.cmu.ml.proppr.util.ParsedFile;
+import edu.cmu.ml.proppr.util.SRWOptions;
+import edu.cmu.ml.proppr.util.SimpleParamVector;
+import gnu.trove.map.TIntDoubleMap;
+import gnu.trove.map.TIntObjectMap;
+import gnu.trove.map.hash.TIntDoubleHashMap;
+import gnu.trove.map.hash.TIntObjectHashMap;
+import gnu.trove.procedure.TIntDoubleProcedure;
+import gnu.trove.procedure.TIntObjectProcedure;
+import org.apache.log4j.Logger;
+
 import java.io.BufferedWriter;
 import java.io.IOException;
 import java.nio.charset.Charset;
@@ -7,25 +24,6 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-
-import gnu.trove.map.TIntObjectMap;
-import gnu.trove.map.hash.TIntObjectHashMap;
-import gnu.trove.procedure.TIntObjectProcedure;
-import gnu.trove.set.TIntSet;
-import gnu.trove.set.hash.TIntHashSet;
-import org.apache.log4j.Logger;
-import gnu.trove.map.TIntDoubleMap;
-import gnu.trove.map.hash.TIntDoubleHashMap;
-import gnu.trove.procedure.TIntDoubleProcedure;
-
-import edu.cmu.ml.proppr.graph.LearningGraph;
-import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
-import edu.cmu.ml.proppr.graph.SimpleLearningGraph;
-import edu.cmu.ml.proppr.learn.SRW;
-import edu.cmu.ml.proppr.util.ParamVector;
-import edu.cmu.ml.proppr.util.ParsedFile;
-import edu.cmu.ml.proppr.util.SRWOptions;
-import edu.cmu.ml.proppr.util.SimpleParamVector;
 
 /**
  * Created by tom on 2/19/15.
@@ -53,38 +51,24 @@ public class Propagator {
 
         final TIntObjectMap<Map<String,Double>> nodeLabels = new TIntObjectHashMap<>();
 
-        while (graphFile.hasNext()) {
-            // Parsing based on edu.cmu.ml.proppr.learn.tools.GroundedExampleStreamer
-            String line = graphFile.next();
-            log.debug("Importing example from line " + graphFile.getLineNumber());
-            String[] parts = line.trim().split("\t", 5);
-            final String label = parts[0];
+        JuntoGraphStreamer graphs = new JuntoGraphStreamer(graphFile, new SimpleLearningGraph.SLGBuilder());
 
-            int startNode = Integer.parseInt(parts[2].split(",")[0]);
+        for (final JuntoGraph graph : graphs) {
+            TIntDoubleMap startVec = new TIntDoubleHashMap();
+            startVec.put(graph.getStartNode(), 1.0);
 
-            try {
-                LearningGraph g = graphBuilder.deserialize(parts[4]);
+            ParamVector params = createParamVector(nthreads);
+            srw.setupParams(params);
 
-                TIntDoubleMap startVec = new TIntDoubleHashMap();
-                startVec.put(startNode, 1.0);
-
-                ParamVector params = createParamVector(nthreads);
-                srw.setupParams(params);
-
-                TIntDoubleMap resultVec = srw.rwrUsingFeatures(g, startVec, params);
-                resultVec.forEachEntry(new TIntDoubleProcedure() {
-                    @Override
-                    public boolean execute(int node, double weight) {
-                        nodeLabels.putIfAbsent(node, new HashMap<String, Double>());
-                        nodeLabels.get(node).put(label, weight);
-                        return true;
-                    }
-                });
-            } catch (LearningGraph.GraphFormatException e) {
-                log.error("Failed to deserialize learning graph.");
-                e.printStackTrace();
-                System.exit(-1);
-            }
+            TIntDoubleMap resultVec = srw.rwrUsingFeatures(graph.getG(), startVec, params);
+            resultVec.forEachEntry(new TIntDoubleProcedure() {
+                @Override
+                public boolean execute(int node, double weight) {
+                    nodeLabels.putIfAbsent(node, new HashMap<String, Double>());
+                    nodeLabels.get(node).put(graph.getLabel(), weight);
+                    return true;
+                }
+            });
         }
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
