@@ -105,9 +105,12 @@ public class Propagator {
             }
         } catch (InterruptedException e) {
             log.trace("SRW execution interrupted", e);
+            pool.shutdownNow();
         } catch (ExecutionException e) {
             log.trace("SRW execution failed", e);
+            pool.shutdownNow();
         }
+        pool.shutdownNow();
         return nodeLabels;
     }
 
