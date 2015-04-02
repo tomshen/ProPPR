@@ -80,37 +80,53 @@ public class Propagator {
         }
     }
 
+    private static void putResult(final TIntObjectMap<Map<String,Double>> map, final SRWResult res) {
+        res.getResultVec().forEachEntry(new TIntDoubleProcedure() {
+            @Override
+            public boolean execute(int node, double weight) {
+                map.putIfAbsent(node, new HashMap<String, Double>());
+                map.get(node).put(res.getLabel(), weight);
+                return true;
+            }
+        });
+    }
+
     private static TIntObjectMap<Map<String,Double>> executeSRW(JuntoGraphStreamer graphs, SRW srw, int nthreads) {
         final TIntObjectMap<Map<String,Double>> nodeLabels = new TIntObjectHashMap<>();
-        ExecutorService pool = Executors.newFixedThreadPool(nthreads);
 
-        Collection<Callable<SRWResult>> tasks = new ArrayList<>();
-
-        for (JuntoGraph graph : graphs) {
-            tasks.add(new SRWRunner(graph, srw));
-        }
-
-        try {
-            List<Future<SRWResult>> results = pool.invokeAll(tasks);
-            for(Future<SRWResult> result : results) {
-                final SRWResult r = result.get();
-                r.getResultVec().forEachEntry(new TIntDoubleProcedure() {
-                    @Override
-                    public boolean execute(int node, double weight) {
-                        nodeLabels.putIfAbsent(node, new HashMap<String, Double>());
-                        nodeLabels.get(node).put(r.getLabel(), weight);
-                        return true;
-                    }
-                });
+        if (nthreads == 1) {
+            for (JuntoGraph graph : graphs) {
+                try {
+                    SRWResult res = new SRWRunner(graph, srw).call();
+                    putResult(nodeLabels, res);
+                } catch (Exception e) {
+                    log.trace("SRW execution failed", e);
+                }
             }
-        } catch (InterruptedException e) {
-            log.trace("SRW execution interrupted", e);
-            pool.shutdownNow();
-        } catch (ExecutionException e) {
-            log.trace("SRW execution failed", e);
+        } else {
+            ExecutorService pool = Executors.newFixedThreadPool(nthreads);
+
+            Collection<Callable<SRWResult>> tasks = new ArrayList<>();
+
+            for (JuntoGraph graph : graphs) {
+                tasks.add(new SRWRunner(graph, srw));
+            }
+
+            try {
+                List<Future<SRWResult>> results = pool.invokeAll(tasks);
+                for(Future<SRWResult> result : results) {
+                    putResult(nodeLabels, result.get());
+                }
+            } catch (InterruptedException e) {
+                log.trace("SRW execution interrupted", e);
+                pool.shutdownNow();
+            } catch (ExecutionException e) {
+                log.trace("SRW execution failed", e);
+                pool.shutdownNow();
+            }
             pool.shutdownNow();
         }
-        pool.shutdownNow();
+
         return nodeLabels;
     }
 
@@ -118,7 +134,12 @@ public class Propagator {
         ParsedFile graphFile = new ParsedFile(args[0]);
         final BufferedWriter resultsWriter = Files.newBufferedWriter(FileSystems.getDefault().getPath(args[1]),
                 Charset.defaultCharset());
-        int nthreads = Integer.parseInt(args[2]);
+        int nthreads;
+        if (args.length >= 3) {
+            nthreads = Integer.parseInt(args[2]);
+        } else {
+            nthreads = 1;
+        }
 
         SRW srw = new SRW<>(new SRWOptions(iterations));
 
