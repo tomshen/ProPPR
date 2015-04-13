@@ -6,20 +6,19 @@ import edu.cmu.ml.proppr.learn.SRW;
 import edu.cmu.ml.proppr.learn.tools.JuntoGraph;
 import edu.cmu.ml.proppr.learn.tools.JuntoGraphStreamer;
 import edu.cmu.ml.proppr.util.ParamVector;
-import edu.cmu.ml.proppr.util.ParsedFile;
 import edu.cmu.ml.proppr.util.SRWOptions;
 import edu.cmu.ml.proppr.util.SimpleParamVector;
 import gnu.trove.map.TIntDoubleMap;
 import gnu.trove.map.TIntObjectMap;
+import gnu.trove.map.TObjectIntMap;
 import gnu.trove.map.hash.TIntDoubleHashMap;
 import gnu.trove.map.hash.TIntObjectHashMap;
+import gnu.trove.map.hash.TObjectIntHashMap;
 import gnu.trove.procedure.TIntDoubleProcedure;
 import gnu.trove.procedure.TIntObjectProcedure;
 import org.apache.log4j.Logger;
-import scala.util.control.TailCalls;
 
-import java.io.BufferedWriter;
-import java.io.IOException;
+import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -34,6 +33,138 @@ public class Propagator {
     public static final int DEFAULT_CAPACITY = 16;
     public static final float DEFAULT_LOAD = (float) 0.75;
     public static final int iterations = 11;
+
+    private static final int FEATURE_SEED = 1;
+    private static final int FEATURE_ASSOC = 2;
+
+    private static Map<String,String> parseJuntoConfig(String juntoConfigFile) {
+        Map<String,String> config = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(juntoConfigFile))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] tokens = line.trim().split(" = ");
+                if (tokens.length >= 2) {
+                    config.put(tokens[0], tokens[1]);
+                }
+            }
+        } catch (FileNotFoundException e) {
+            log.trace("Junto config file not found: " + juntoConfigFile, e);
+        } catch (IOException e) {
+            log.trace("Error reading Junto config file: " + juntoConfigFile, e);
+        }
+        return config;
+    }
+
+    /**
+     * Maps Strings to unique ints
+     */
+    private static class NodeMap {
+        private TObjectIntMap<String> nodeMap;
+        private TIntObjectMap<String> reverseNodeMap;
+        private int nextInt;
+
+        public NodeMap() {
+            this.nodeMap = new TObjectIntHashMap<>();
+            this.reverseNodeMap = new TIntObjectHashMap<>();
+            this.nextInt = 2;
+        }
+
+        public boolean contains(String key) {
+            return nodeMap.containsKey(key);
+        }
+
+        public int get(String key) {
+            return nodeMap.get(key);
+        }
+
+        public String get(int key) {
+            return reverseNodeMap.get(key);
+        }
+
+        public void put(String key) {
+            nodeMap.putIfAbsent(key, nextInt);
+            reverseNodeMap.putIfAbsent(nodeMap.get(key), key);
+            nextInt++;
+        }
+
+        public int getStart() {
+            return 1;
+        }
+    }
+
+    private static String convertGraph(String graphFile, NodeMap nodeMap) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new FileReader(graphFile))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] tokens = line.trim().split("\t");
+                if (tokens.length == 3) {
+                    String node1 = tokens[0];
+                    String node2 = tokens[1];
+                    String weight = tokens[2];
+                    nodeMap.put(node1);
+                    nodeMap.put(node2);
+                    sb.append(nodeMap.get(node1));
+                    sb.append("->");
+                    sb.append(nodeMap.get(node2));
+                    sb.append(":");
+                    sb.append(FEATURE_ASSOC);
+                    sb.append("@");
+                    sb.append(weight);
+                    sb.append("\t");
+                    sb.append(nodeMap.get(node2));
+                    sb.append("->");
+                    sb.append(nodeMap.get(node1));
+                    sb.append(":");
+                    sb.append(FEATURE_ASSOC);
+                    sb.append("@");
+                    sb.append(weight);
+                    sb.append("\t");
+                }
+            }
+        } catch (FileNotFoundException e) {
+            log.error("Graph file not found: " + graphFile, e);
+            System.exit(1);
+        } catch (IOException e) {
+            log.error("Error reading graph file: " + graphFile, e);
+            System.exit(1);
+        }
+        return sb.toString();
+    }
+
+    private static Map<String,String> convertSeeds(String seedsFile, NodeMap nodeMap) {
+        Map<String,StringBuilder> seedEdgeBuilder = new HashMap<>();
+        try (BufferedReader br = new BufferedReader(new FileReader(seedsFile))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                String[] tokens = line.trim().split("\t");
+                if (tokens.length >= 2) {
+                    String node = tokens[0];
+                    String label = tokens[1];
+                    if (!seedEdgeBuilder.containsKey(label)) {
+                        seedEdgeBuilder.put(label, new StringBuilder());
+                    }
+                    StringBuilder sb = seedEdgeBuilder.get(label);
+                    nodeMap.put(node);
+                    sb.append(nodeMap.getStart());
+                    sb.append("->");
+                    sb.append(nodeMap.get(node));
+                    sb.append(":");
+                    sb.append(FEATURE_SEED);
+                    sb.append("\t");
+                }
+            }
+        } catch (FileNotFoundException e) {
+            log.error("Seeds file not found: " + seedsFile, e);
+        } catch (IOException e) {
+            log.error("Error reading seeds file: " + seedsFile, e);
+        }
+        Map<String,String> seedEdges = new HashMap<>();
+        for (Map.Entry<String,StringBuilder> e : seedEdgeBuilder.entrySet()) {
+            seedEdges.put(e.getKey(), e.getValue().toString());
+        }
+        return seedEdges;
+    }
 
     private static ParamVector createParamVector(int nthreads) {
         return new SimpleParamVector<String>(new ConcurrentHashMap<String,Double>(DEFAULT_CAPACITY,
@@ -51,6 +182,7 @@ public class Propagator {
 
         @Override
         public SRWResult call() throws Exception {
+            log.info("Running SRW on graph for label " + graph.getLabel());
             TIntDoubleMap startVec = new TIntDoubleHashMap();
             startVec.put(this.graph.getStartNode(), 1.0);
 
@@ -100,7 +232,7 @@ public class Propagator {
                     SRWResult res = new SRWRunner(graph, srw).call();
                     putResult(nodeLabels, res);
                 } catch (Exception e) {
-                    log.trace("SRW execution failed", e);
+                    log.error("SRW execution failed", e);
                 }
             }
         } else {
@@ -118,10 +250,10 @@ public class Propagator {
                     putResult(nodeLabels, result.get());
                 }
             } catch (InterruptedException e) {
-                log.trace("SRW execution interrupted", e);
+                log.error("SRW execution interrupted", e);
                 pool.shutdownNow();
             } catch (ExecutionException e) {
-                log.trace("SRW execution failed", e);
+                log.error("SRW execution failed", e);
                 pool.shutdownNow();
             }
             pool.shutdownNow();
@@ -131,7 +263,6 @@ public class Propagator {
     }
 
     public static void main(String[] args) throws IOException {
-        ParsedFile graphFile = new ParsedFile(args[0]);
         final BufferedWriter resultsWriter = Files.newBufferedWriter(FileSystems.getDefault().getPath(args[1]),
                 Charset.defaultCharset());
         int nthreads;
@@ -141,14 +272,19 @@ public class Propagator {
             nthreads = 1;
         }
 
+        Map<String,String> juntoConfig = parseJuntoConfig(args[0]);
+        final NodeMap nodeMap = new NodeMap();
+        String graphEdges = convertGraph(juntoConfig.get("graph_file"), nodeMap);
+        log.info("Converted graph file");
+        Map<String,String> seedEdges = convertSeeds(juntoConfig.get("seed_file"), nodeMap);
+        log.info("Converted seeds file");
+        LearningGraphBuilder graphBuilder = new SimpleLearningGraph.SLGBuilder();
+
+        JuntoGraphStreamer graphs = new JuntoGraphStreamer(graphEdges, seedEdges, nodeMap.getStart(), graphBuilder);
         SRW srw = new SRW<>(new SRWOptions(iterations));
 
-        JuntoGraphStreamer graphs = new JuntoGraphStreamer(graphFile, new SimpleLearningGraph.SLGBuilder());
-
         long start = System.currentTimeMillis();
-
         final TIntObjectMap<Map<String,Double>> nodeLabels = executeSRW(graphs, srw, nthreads);
-
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
         start = System.currentTimeMillis();
@@ -179,9 +315,9 @@ public class Propagator {
                     for (String label : sortedLabels) {
                         sb.append(label + "\t");
                     }
-                    resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
+                    resultsWriter.write(nodeMap.get(node) + "\t" + sb.toString() + "\n");
                 } catch (IOException e) {
-                    log.trace("Failed to write node ", e);
+                    log.error("Failed to write node ", e);
                 }
                 return true;
             }

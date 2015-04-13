@@ -3,10 +3,10 @@ package edu.cmu.ml.proppr.learn.tools;
 import edu.cmu.ml.proppr.graph.LearningGraph;
 import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
 import edu.cmu.ml.proppr.util.FileBackedIterable;
-import edu.cmu.ml.proppr.util.ParsedFile;
 import org.apache.log4j.Logger;
 
 import java.util.Iterator;
+import java.util.Map;
 
 /**
  * Created by tom on 3/27/15.
@@ -15,45 +15,35 @@ public class JuntoGraphStreamer implements Iterable<JuntoGraph>, Iterator<JuntoG
     private static final Logger log = Logger.getLogger(JuntoGraphStreamer.class);
     public static final String MAJOR_DELIM="\t";
     public static final String MINOR_DELIM=",";
-    private ParsedFile file;
+    private final String graphEdges;
+    private final Map<String, String> labelSeedEdges;
+    private Iterator<Map.Entry<String, String>> labelIterator;
+    private final int startNode;
     private LearningGraphBuilder builder;
-    public JuntoGraphStreamer(String cookedExamplesFile, LearningGraphBuilder builder) {
-        this(new ParsedFile(cookedExamplesFile), builder);
-    }
-    public JuntoGraphStreamer(ParsedFile cookedExamplesFile, LearningGraphBuilder builder) {
-        log.info("Importing cooked examples from "+cookedExamplesFile.getFileName());
-        this.file = cookedExamplesFile;
+    public JuntoGraphStreamer(String graphEdges, Map<String,String> labelSeedEdges, int startNode,
+                              LearningGraphBuilder builder) {
+        this.graphEdges = graphEdges;
+        this.labelSeedEdges = labelSeedEdges;
+        this.labelIterator = this.labelSeedEdges.entrySet().iterator();
+        this.startNode = startNode;
         this.builder = builder;
     }
 
     @Override
     public boolean hasNext() {
-        return this.file.hasNext();
-    }
-
-    private int[] stringToInt(String[] raw) {
-        int[] ret = new int[raw.length];
-        for (int i=0; i<raw.length; i++) { ret[i] = Integer.parseInt(raw[i]); }
-        return ret;
+        return this.labelIterator.hasNext();
     }
 
     @Override
     public JuntoGraph next() {
-        String line = this.file.next();
-        log.debug("Importing example from line "+file.getLineNumber());
-
-        String[] parts = line.trim().split(MAJOR_DELIM,5);
-
-        int[] posList;
-        if (parts[2].length()>0) posList = stringToInt(parts[2].split(MINOR_DELIM));
-        else posList = new int[0];
-        String label = parts[0];
-        int startNode = posList[0];
+        Map.Entry<String,String> entry = this.labelIterator.next();
+        String label = entry.getKey();
+        String seedEdges = entry.getValue();
+        log.debug("Processing label " + label);
         try {
-            LearningGraph g = builder.deserialize(parts[4]);
-            return new JuntoGraph(g, label, startNode);
+            LearningGraph g = this.builder.deserialize(" \t \t" + this.graphEdges + seedEdges);
+            return new JuntoGraph(g, label, this.startNode);
         } catch (LearningGraph.GraphFormatException e) {
-            file.parseError("["+e.getMessage()+"]");
             if (this.hasNext()) return next();
             else return null;
         }
@@ -73,7 +63,7 @@ public class JuntoGraphStreamer implements Iterable<JuntoGraph>, Iterator<JuntoG
     @Override
     public void wrap() {
         if (this.hasNext()) return;
-        this.file.reset();
+        this.labelIterator = this.labelSeedEdges.entrySet().iterator();
     }
 
 }
