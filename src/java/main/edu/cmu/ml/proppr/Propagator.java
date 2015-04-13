@@ -1,10 +1,9 @@
 package edu.cmu.ml.proppr;
 
+import edu.cmu.ml.proppr.graph.LearningGraph;
 import edu.cmu.ml.proppr.graph.LearningGraphBuilder;
 import edu.cmu.ml.proppr.graph.SimpleLearningGraph;
 import edu.cmu.ml.proppr.learn.SRW;
-import edu.cmu.ml.proppr.learn.tools.JuntoGraph;
-import edu.cmu.ml.proppr.learn.tools.JuntoGraphStreamer;
 import edu.cmu.ml.proppr.util.ParamVector;
 import edu.cmu.ml.proppr.util.SRWOptions;
 import edu.cmu.ml.proppr.util.SimpleParamVector;
@@ -172,25 +171,34 @@ public class Propagator {
     }
 
     private static class SRWRunner implements Callable<SRWResult> {
-        private final JuntoGraph graph;
+        private final String graphEdges;
+        private final String seedEdges;
+        private final int startNode;
+        private final String label;
+        private final LearningGraphBuilder builder;
         private final SRW srw;
 
-        private SRWRunner(JuntoGraph graph, SRW srw) {
-            this.graph = graph;
+        public SRWRunner(String graphEdges, String seedEdges, int startNode, String label, LearningGraphBuilder builder,
+                         SRW srw) {
+            this.graphEdges = graphEdges;
+            this.seedEdges = seedEdges;
+            this.startNode = startNode;
+            this.label = label;
+            this.builder = builder;
             this.srw = srw;
         }
 
         @Override
         public SRWResult call() throws Exception {
-            log.info("Running SRW on graph for label " + graph.getLabel());
+            log.info("Building graph for label " + this.label);
+            LearningGraph graph = this.builder.deserialize(" \t \t" + this.graphEdges + seedEdges);
+            log.info("Running SRW on graph for label " + this.label);
             TIntDoubleMap startVec = new TIntDoubleHashMap();
-            startVec.put(this.graph.getStartNode(), 1.0);
-
+            startVec.put(this.startNode, 1.0);
             ParamVector params = createParamVector(1);
             this.srw.setupParams(params);
-
-            TIntDoubleMap resultVec = this.srw.rwrUsingFeatures(this.graph.getG(), startVec, params);
-            return new SRWResult(resultVec, this.graph.getLabel());
+            TIntDoubleMap resultVec = this.srw.rwrUsingFeatures(graph, startVec, params);
+            return new SRWResult(resultVec, label);
         }
     }
 
@@ -223,13 +231,17 @@ public class Propagator {
         });
     }
 
-    private static TIntObjectMap<Map<String,Double>> executeSRW(JuntoGraphStreamer graphs, SRW srw, int nthreads) {
+    private static TIntObjectMap<Map<String,Double>> executeSRW(String graphEdges, Map<String,String> labelSeedEdges,
+                                                                int startNode, LearningGraphBuilder builder, SRW srw,
+                                                                int nthreads) {
         final TIntObjectMap<Map<String,Double>> nodeLabels = new TIntObjectHashMap<>();
 
         if (nthreads == 1) {
-            for (JuntoGraph graph : graphs) {
+            for (Map.Entry<String,String> entry : labelSeedEdges.entrySet()) {
                 try {
-                    SRWResult res = new SRWRunner(graph, srw).call();
+                    String label = entry.getKey();
+                    String seedEdges = entry.getValue();
+                    SRWResult res = new SRWRunner(graphEdges, seedEdges, startNode, label, builder, srw).call();
                     putResult(nodeLabels, res);
                 } catch (Exception e) {
                     log.error("SRW execution failed", e);
@@ -240,8 +252,10 @@ public class Propagator {
 
             Collection<Callable<SRWResult>> tasks = new ArrayList<>();
 
-            for (JuntoGraph graph : graphs) {
-                tasks.add(new SRWRunner(graph, srw));
+            for (Map.Entry<String,String> entry : labelSeedEdges.entrySet()) {
+                String label = entry.getKey();
+                String seedEdges = entry.getValue();
+                tasks.add(new SRWRunner(graphEdges, seedEdges, startNode, label, builder, srw));
             }
 
             try {
@@ -280,11 +294,11 @@ public class Propagator {
         log.info("Converted seeds file");
         LearningGraphBuilder graphBuilder = new SimpleLearningGraph.SLGBuilder();
 
-        JuntoGraphStreamer graphs = new JuntoGraphStreamer(graphEdges, seedEdges, nodeMap.getStart(), graphBuilder);
         SRW srw = new SRW<>(new SRWOptions(iterations));
 
         long start = System.currentTimeMillis();
-        final TIntObjectMap<Map<String,Double>> nodeLabels = executeSRW(graphs, srw, nthreads);
+        final TIntObjectMap<Map<String,Double>> nodeLabels = executeSRW(graphEdges, seedEdges, nodeMap.getStart(),
+                graphBuilder, srw, nthreads);
         log.info("Finished SRW in " + (System.currentTimeMillis() - start) + " ms");
 
         start = System.currentTimeMillis();
