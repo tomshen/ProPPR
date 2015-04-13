@@ -174,16 +174,14 @@ public class Propagator {
             public boolean execute(int node, Map<String, Double> labelWeights) {
                 List<String> sortedLabels = sortedKeysByValue(labelWeights);
                 Collections.reverse(sortedLabels);
-                if (resultsWriter != null) {
-                    try {
-                        StringBuilder sb = new StringBuilder();
-                        for (String label : sortedLabels) {
-                            sb.append(label + "\t");
-                        }
-                        resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
-                    } catch (IOException e) {
-                        log.trace("Failed to write node ", e);
+                try {
+                    StringBuilder sb = new StringBuilder();
+                    for (String label : sortedLabels) {
+                        sb.append(label + "\t");
                     }
+                    resultsWriter.write(Integer.toString(node) + "\t" + sb.toString() + "\n");
+                } catch (IOException e) {
+                    log.trace("Failed to write node ", e);
                 }
                 return true;
             }
